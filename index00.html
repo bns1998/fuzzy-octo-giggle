@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام طلبات</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            direction: rtl;
+            background-color: #f4f4f4;
+            padding: 10px;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: auto;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 1.5em;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-size: 1em;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+
+        .delivery-buttons {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 10px;
+        }
+
+        .delivery-button {
+            padding: 10px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .btn-basra {
+            background-color: #007bff; /* لون أزرار البصرة */
+        }
+
+        .btn-governorates {
+            background-color: #28a745; /* لون أزرار المحافظات */
+        }
+
+        .btn-clear {
+            background-color: #dc3545; /* لون زر المسح */
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+            width: 100%;
+            font-size: 1em;
+        }
+
+        .btn-export {
+            background-color: #ffc107; /* لون زر تصدير */
+            color: black;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+            width: 100%;
+            font-size: 1em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        table, th, td {
+            border: 1px solid #ccc;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: center;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .total-row {
+            font-weight: bold;
+            background-color: #e2e2e2;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.2em;
+            }
+
+            .delivery-button {
+                font-size: 0.9em;
+            }
+
+            .btn-clear,
+            .btn-export {
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>نظام استلام الطلبات</h1>
+        <form id="orderForm" onsubmit="return false;">
+            <label for="orderNumber">رقم الطلب:</label>
+            <input type="text" id="orderNumber" required pattern="^[0-9]+$" title="يجب أن يكون رقم الطلب رقمًا صحيحًا.">
+
+            <label for="totalPrice">السعر الكلي:</label>
+            <input type="number" id="totalPrice" required min="1" step="1" title="يجب إدخال سعر كلي صحيح.">
+
+            <label for="deliveryPrice">سعر التوصيل:</label>
+            <div class="delivery-buttons">
+                <button type="button" class="delivery-button btn-basra" onclick="addOrder(3)">البصرة (3 ألف)</button>
+                <button type="button" class="delivery-button btn-governorates" onclick="addOrder(4)">للمحافظات (4 ألف)</button>
+            </div>
+        </form>
+
+        <button class="btn-clear" onclick="clearOrders()">مسح السجل</button>
+        <button class="btn-export" onclick="exportToExcel()">تصدير إلى Excel</button>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>رقم الطلب</th>
+                    <th>السعر الكلي</th>
+                    <th>سعر التوصيل</th>
+                    <th>السعر بدون توصيل</th>
+                </tr>
+            </thead>
+            <tbody id="ordersTableBody">
+            </tbody>
+            <tfoot>
+                <tr class="total-row">
+                    <td colspan="3">المجموع النهائي للسعر بدون توصيل:</td>
+                    <td id="totalPriceWithoutDelivery">0</td>
+                </tr>
+                <tr class="total-row">
+                    <td colspan="3">المجموع النهائي للسعر مع التوصيل:</td>
+                    <td id="totalPriceWithDelivery">0</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <script>
+        const ordersTableBody = document.getElementById('ordersTableBody');
+        const totalPriceWithoutDeliveryElement = document.getElementById('totalPriceWithoutDelivery');
+        const totalPriceWithDeliveryElement = document.getElementById('totalPriceWithDelivery');
+        let orders = JSON.parse(localStorage.getItem('orders')) || [];
+
+        // استرجاع الطلبات المخزنة عند تحميل الصفحة
+        window.onload = function() {
+            updateTable();
+        };
+
+        function isValidInput(orderNumber, totalPrice) {
+            const orderNumberValid = /^[0-9]+$/.test(orderNumber);
+            const totalPriceValid = Number.isInteger(totalPrice) && totalPrice > 0;
+
+            return orderNumberValid && totalPriceValid;
+        }
+
+        function addOrder(deliveryPrice) {
+            const orderNumber = document.getElementById('orderNumber').value;
+            const totalPrice = parseInt(document.getElementById('totalPrice').value, 10);
+
+            if (!isValidInput(orderNumber, totalPrice)) {
+                alert('يرجى التأكد من إدخال رقم الطلب والسعر الكلي بشكل صحيح.');
+                return;
+            }
+
+            if (orders.some(order => order.number === orderNumber)) {
+                alert('رقم الطلب موجود بالفعل.');
+                return;
+            }
+
+            const priceWithoutDelivery = totalPrice - deliveryPrice;
+            const newOrder = { number: orderNumber, totalPrice, deliveryPrice, priceWithoutDelivery };
+            orders.push(newOrder);
+            localStorage.setItem('orders', JSON.stringify(orders));
+            updateTable();
+            document.getElementById('orderNumber').value = '';
+            document.getElementById('totalPrice').value = '';
+        }
+
+        function updateTable() {
+            ordersTableBody.innerHTML = '';
+            let totalWithoutDelivery = 0;
+            let totalWithDelivery = 0;
+
+            orders.forEach(order => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${order.number}</td>
+                    <td>${order.totalPrice}</td>
+                    <td>${order.deliveryPrice}</td>
+                    <td>${order.priceWithoutDelivery}</td>
+                `;
+                ordersTableBody.appendChild(row);
+                totalWithoutDelivery += order.priceWithoutDelivery;
+                totalWithDelivery += order.totalPrice;
+            });
+
+            totalPriceWithoutDeliveryElement.textContent = totalWithoutDelivery;
+            totalPriceWithDeliveryElement.textContent = totalWithDelivery;
+        }
+
+        function clearOrders() {
+            const confirmClear = confirm('هل أنت متأكد أنك تريد مسح السجل؟');
+            if (confirmClear) {
+                orders = [];
+                localStorage.removeItem('orders');
+                updateTable();
+            }
+        }
+
+        function exportToExcel() {
+            const ws = XLSX.utils.json_to_sheet(orders);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "الطلبات");
+            XLSX.writeFile(wb, "الطلبات.xlsx");
+        }
+    </script>
+</body>
+</html>
